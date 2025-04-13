@@ -40,7 +40,6 @@ def run_continual_experiment(experiment_parameters):
     # Global iterator: starts from 0
     global_iter = 0
 
-    # Log data percentage matrix
     if log_wandb:
         data_perc_table = wandb.Table(columns=[f"{dept_id}" for dept_id in experiment_parameters["dept_ids"]],
                                       data=perc_matrix)
@@ -50,8 +49,7 @@ def run_continual_experiment(experiment_parameters):
                                       data=samples_matrix)
         wandb.log({"Data Samples Matrix": data_samples_table}, step=global_iter)
 
-    g_rec = 0.0
-    g_prec = 0.0
+
 
     # iterate through all experiences (tasks) and train the model for each experience
     for exp_id, exp in enumerate(benchmark.train_stream):
@@ -66,13 +64,7 @@ def run_continual_experiment(experiment_parameters):
         loss_eval_exp = res_eval[f"Loss_Exp/eval_phase/train_stream/Task000/Exp{exp_id:03d}"]
         loss_eval_exp_allseen = res_eval[f"Loss_Stream/eval_phase/train_stream/Task000"]
 
-        rec, info_fp = mha.compute_rec_ratio(strategy, benchmark.train_stream[exp_id].dataset,
-                                                 experiment_parameters)
-        prec, info_fn = mha.compute_prec_ratio(strategy, benchmark.train_stream[exp_id].dataset,
-                                                 experiment_parameters)
 
-        g_rec += rec
-        g_prec += prec
 
         # ============================
         # Compute per-department losses
@@ -92,9 +84,6 @@ def run_continual_experiment(experiment_parameters):
                     loss_dept_i = None
                 loss_per_dep[itr_dep].append(loss_dept_i)
 
-        return g_rec, g_prec
-
-
         if log_wandb:
             wandb.log({"experience/loss_train": loss_train_exp}, step=global_iter)
             wandb.log({"experience/loss_exp": loss_eval_exp}, step=global_iter)
@@ -110,6 +99,7 @@ def run_continual_experiment(experiment_parameters):
             # save checkpoint
             torch.save(strategy.model.state_dict(), os.path.join(output_path, f"ckpt_{run_name}_{exp_id}.pt"))
 
+        
         # increment global iterator
         global_iter += 1
 
@@ -118,20 +108,29 @@ def run_continual_experiment(experiment_parameters):
     # ============================
 
     last_exp_id = len(benchmark.train_stream) - 1
-    fp_ratio, info_fp = mha.compute_FP_ratio(strategy, benchmark.train_stream[last_exp_id].dataset, experiment_parameters)
-    fn_ratio, info_fn = mha.compute_FN_ratio(strategy, benchmark.train_stream[last_exp_id].dataset, experiment_parameters)
+    rec, info_rec = mha.compute_rec_ratio(strategy, benchmark.train_stream[last_exp_id].dataset,experiment_parameters)
+    prec, info_prec = mha.compute_prec_ratio(strategy, benchmark.train_stream[last_exp_id].dataset,experiment_parameters)
+
+
+    
+    print("rec:",rec)
+    print("prec:",prec)
 
     if log_wandb:
-        # FP results
-        wandb.log({"fp_ratio": fp_ratio}, step=global_iter)
-        fp_table = wandb.Table(columns=[f"{i}" for i in range(len(info_fp["rec_losses"]))],
-                               data=[info_fp["depts"], info_fp["rec_losses"]])
-        wandb.log({"FP": fp_table}, step=global_iter)
+        # Log scalar recall
+        wandb.log({"rec": rec}, step=global_iter)
 
-        # FN Results
-        wandb.log({"fn_ratio": fn_ratio}, step=global_iter)
-        fn_table = wandb.Table(columns=[f"{i}" for i in range(len(info_fn["rec_losses"]))],
-                               data=[info_fn["depts"], info_fn["rec_losses"]])
-        wandb.log({"FN": fn_table}, step=global_iter)
+        # Create Recall Table: each row contains [department, rec_loss]
+        rec_data = list(zip(info_rec["depts"], info_rec["rec_losses"]))
+        rec_table = wandb.Table(columns=["Dept", "Reconstruction Loss"], data=rec_data)
+        wandb.log({"Recall Table": rec_table}, step=global_iter)
+
+        # Log scalar precision
+        wandb.log({"prec": prec}, step=global_iter)
+
+        # Create Precision Table: each row contains [department, rec_loss]
+        prec_data = list(zip(info_prec["depts"], info_prec["rec_losses"]))
+        prec_table = wandb.Table(columns=["Dept", "Reconstruction Loss"], data=prec_data)
+        wandb.log({"Precision Table": prec_table}, step=global_iter)
 
         wandb.finish()

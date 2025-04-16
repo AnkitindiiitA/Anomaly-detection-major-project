@@ -18,81 +18,14 @@ import torch
 
 # import project libraries
 import UtilsHandler.UtilsHandler as UtilsHandler
+import ExperimentHandler.ContinualExperiment
+import ExperimentHandler.FromScratchExperiment
+import ExperimentHandler.JointExperiment
+import ExperimentHandler.evaluate
 
-
-
-def evaluate_continual_checkpoint(experiment_parameters):
-    # Initialize handlers
-    uha = UtilsHandler()
-    sha = StrategyHandler()
-    bha = BenchmarkHandler()
-    mha = MetricHandler()
-
-    # Set device
-    device_str = experiment_parameters.get('device', 'cuda' if torch.cuda.is_available() else 'cpu')
-    device = torch.device(device_str)
-    experiment_parameters['device'] = device
-
-    # Set seed
-    seed = experiment_parameters.get('seed', 1234)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if device.type == 'cuda':
-        torch.cuda.manual_seed(seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-
-    # Load dataset
-    payment_ds = PaymentDataset(experiment_parameters['data_dir'])
-
-    # Build benchmark from config
-    perc_matrix = bha.create_percnt_matrix(experiment_parameters)
-    exp_assignments, samples_matrix = bha.get_exp_assignment(experiment_parameters, payment_ds, perc_matrix)
-    benchmark = bha.get_benchmark(experiment_parameters, payment_ds, exp_assignments)
-
-    # Load strategy and model
-    strategy = sha.get_strategy(experiment_parameters, payment_ds)
-
-    # === Load checkpoint ===
-    checkpoint_path = experiment_parameters.get('checkpoint_path')
-    if checkpoint_path is not None and os.path.exists(checkpoint_path):
-        print(f"Loading checkpoint from {checkpoint_path}")
-        checkpoint = torch.load(checkpoint_path, map_location=device)
-
-        # Load model weights
-        strategy.model.load_state_dict(checkpoint['model_state_dict'])
-
-        if 'optimizer_state_dict' in checkpoint and strategy.optimizer is not None:
-            strategy.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-
-        if 'scheduler_state_dict' in checkpoint and hasattr(strategy, 'scheduler') and strategy.scheduler is not None:
-            strategy.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-
-    else:
-        raise FileNotFoundError(f"Checkpoint not found at {checkpoint_path}")
-
-    # === Evaluate on last experience ===
-    last_exp_id = len(benchmark.train_stream) - 1
-    last_exp_dataset = benchmark.train_stream[last_exp_id].dataset
-
-    print(f"Evaluating on last experience (ID: {last_exp_id})...")
-
-    rec, info_rec = mha.compute_rec_ratio(strategy, last_exp_dataset, experiment_parameters)
-    prec, info_prec = mha.compute_prec_ratio(strategy, last_exp_dataset, experiment_parameters)
-
-    print("Recall:", rec)
-    print("Precision:", prec)
-
-    return {
-        "recall": rec,
-        "recall_info": info_rec,
-        "precision": prec,
-        "precision_info": info_prec,
-    }
-    return 0
 
 # define main function
-if _name_ == "_main_":
+if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='deepNadim Experiments')
 
@@ -165,6 +98,8 @@ if _name_ == "_main_":
     parser.add_argument('--si_lambda', help='', nargs='?', type=float, default=1.00)
     parser.add_argument('--si_eps', help='', nargs='?', type=float, default=0.001)
 
+    parser.add_argument('--checkpoint_path', type=str, required=True, help='Path to model checkpoint')
+
     # parse script arguments
     args = parser.parse_args()
     experiment_parameter = vars(parser.parse_args())
@@ -208,13 +143,28 @@ if _name_ == "_main_":
     experiment_parameter.update(benchmark_configs)
 
     # set run name
-    run_name = experiment_parameter['training_regime'] + '' + experiment_parameter['strategy'] + '' + \
-                experiment_parameter["reduction_type"] + "" + f"{experiment_parameter['dataset']}" + '' + \
+    run_name = experiment_parameter['training_regime'] + '_' + experiment_parameter['strategy'] + '_' + \
+                experiment_parameter["reduction_type"] + "_" + f"{experiment_parameter['dataset']}" + '_' + \
                 f"s{experiment_parameter['seed']}"
     run_name += '_' + time.strftime("%y-%m-%d-%H-%M-%S")
     experiment_parameter['run_name'] = run_name
-    results = evaluate_continual_checkpoint(experiment_parameter)
-    print(results)
 
+    # # case: baseline autoencoder experiment
+    # if experiment_parameter['training_regime'] == 'continual':
+    #     # run single continual learning experiment
+    #     ExperimentHandler.ContinualExperiment.run_continual_experiment(experiment_parameter)
 
+    # elif experiment_parameter['training_regime'] == 'fromscratch':
+    #     # run single from-scratch learning experiment
+    #     ExperimentHandler.FromScratchExperiment.run_fromscratch_experiment(experiment_parameter)
 
+    # elif experiment_parameter['training_regime'] == 'joint':
+    #     ExperimentHandler.JointExperiment.run_joint_experiment(experiment_parameter)
+
+    # # case: unknown architecture selected
+    # else:
+
+    #     # raise exception
+    #     raise Exception('Model architecture is not defined or unknown.')
+    ExperimentHandler.evaluate.evaluate_continual_checkpoint(experiment_parameter)
+    

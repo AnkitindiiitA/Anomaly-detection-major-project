@@ -96,6 +96,7 @@ if __name__ == "__main__":
     # synaptic intelligence
     parser.add_argument('--si_lambda', help='', nargs='?', type=float, default=1.00)
     parser.add_argument('--si_eps', help='', nargs='?', type=float, default=0.001)
+    parser.add_argument('--gem_patterns_per_exp', type=int, default=256, help='Number of patterns per experience for GEM')
 
     # parse script arguments
     args = parser.parse_args()

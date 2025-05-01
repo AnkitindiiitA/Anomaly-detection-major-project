@@ -129,7 +129,15 @@ class StrategyHandler(object):
                              evaluator=eval_plugin,
                              plugins=[replay_plugin],
                              device=device)
-
+        elif experiment_parameters["strategy"] == "GEM":
+            strategy = GEM(model=model,
+                           optimizer=optimizer,
+                           criterion=torch.nn.BCELoss(),
+                           patterns_per_exp=experiment_parameters["gem_patterns_per_exp"],
+                           train_mb_size=experiment_parameters["batch_size"],
+                           train_epochs=experiment_parameters["no_epochs"],
+                           evaluator=eval_plugin,
+                           device=device)
         else:
             raise NotImplementedError()
 
